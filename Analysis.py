@@ -15,6 +15,7 @@ class Analysis:
     reported_feedback = pd.DataFrame()
     all_tasks = pd.DataFrame()
     comparison_result = pd.DataFrame()
+    collation_result = pd.DataFrame()
     normalized_result = pd.DataFrame()
 
 
@@ -56,6 +57,7 @@ class Analysis:
              '8231.jpg': 'Boxer', '9031.jpg': 'Dirt', '1302.jpg': 'Dog',
              '4597.jpg': 'Couple', '1321.jpg': 'Bear', '8492.jpg': 'Roller_coaster',
              })
+
         Analysis.pupil = pupil_data
 
 
@@ -260,7 +262,27 @@ class Analysis:
                                                peakDuration]
         return peak_cause
 
-
+    def collate_peaks(self, all_tasks):
+        peaks = pd.DataFrame()
+        for task in all_tasks.task_name.unique():
+            # print(task)
+            this_task = ''
+            duration = 0
+            this_task = all_tasks[all_tasks['task_name'] == task]
+            participant = this_task.ParticipantName.iloc[0]
+            task_name = task
+            duration = this_task.RecordingTimestamp.max() - this_task.RecordingTimestamp.min()
+            if duration == 0:  # duration is 0 if there is only one record, max will be equal to min
+                print(task_name)
+                continue
+            if duration < 3000:
+                continue
+            peak_indices = self.get_peaks(this_task, 'l')
+            peak_causes = self.get_peak_cause(peak_indices, this_task, 'l')
+            peak_causes['ParticipantName'] = participant
+            peak_causes['task'] = task_name
+            peaks = peaks.append(peak_causes)
+        return peaks
 
     def compare_tasks(self, all_tasks):
         comparison = pd.DataFrame(
@@ -309,21 +331,22 @@ class Analysis:
         for participant in pupil_data.ParticipantName.unique():
             participant_x = self.get_participant(participant)
             participant_x = participant_x.sort_values(by='RecordingTimestamp')
-            count = 0
-            if (self.reported_feedback[self.reported_feedback['Participant']==participant].Eye_tracker_accuracy.iloc[0] <= 70):
-                continue
-            for task in participant_x.MediaName.unique():
-                count = count + 1
-                if count > 5:
+            #count = 0
+            #if (self.reported_feedback[self.reported_feedback['Participant']==participant].Eye_tracker_accuracy.iloc[0] <= 70):
+                #continue
+            uniqueTasks = participant_x.MediaName.unique()
+            for task in uniqueTasks:
+                #count = count + 1
+                #if count > 5:
                 #if (count < 5) | (count > 8):
                 #if count < 9:
-                    continue
+                    #continue
                 if(task == task):
-                    participant_x_medium = self.extractMedia(participant_x,task)
+                    participant_x_task = self.extractMedia(participant_x,task)
                     #We can only use observations greater than 3seconds
-                    if((participant_x_medium.RecordingTimestamp.max() - participant_x_medium.RecordingTimestamp.min()) < 3000):
+                    if((participant_x_task.RecordingTimestamp.max() - participant_x_task.RecordingTimestamp.min()) < 3000):
                         continue
-                    participant_x_aggregate = self.create_aggregated_average(participant_x_medium,50)
+                    participant_x_aggregate = self.create_aggregated_average(participant_x_task,50)
                     #curr_task = participant_x_aggregate
                     participant_x_scale = self.convert_to_scale(participant_x_aggregate,7)
                     participant_x_scale['task_name'] = task
@@ -335,45 +358,24 @@ class Analysis:
     def compare_results(self):
         all_tasks = Analysis.all_tasks
         reported_feedback = self.reported_feedback
-        participant_result = pd.DataFrame(columns=['ParticipantName','task_name','AOI','min','max',
-                                              'mean','std','start_time','end_time','duration','number_of_peaks','peak_density',
-                                              'peak_indices','peak_feet','peak_valley','footDelta','valleyDelta'])
         comparison_result = pd.DataFrame(columns=['ParticipantName','task_name','AOI','min','max',
                                               'mean','std','start_time','end_time','duration','number_of_peaks','peak_density',
                                               'peak_indices','peak_feet','peak_valley','footDelta','valleyDelta'])
         for participant in all_tasks.ParticipantName.unique():
-            print(participant)
+            #print(participant)
             participant_result = self.compare_tasks(all_tasks[all_tasks['ParticipantName']==participant])
             comparison_result = comparison_result.append(participant_result)
-
-        comparison_result['reported'] = 0
-        for task in comparison_result.task_name.unique():
-            for participant in comparison_result.ParticipantName.unique():
-                rating = 0
-                rating = reported_feedback[reported_feedback['Participant'] == participant][task]
-                comparison_result.loc[((comparison_result['task_name']==task) & (comparison_result['ParticipantName']==participant)), 'reported']=rating.iloc[0]
         Analysis.comparison_result = comparison_result
 
-
-    def fill_dependent_variables(self):
-        comparison_result = Analysis.comparison_result
-        iaps_arousal = pd.DataFrame([{'Basket':1.76, 'Lamp':1.72, 'Roller_coaster':7.31, 'Boy':2.63, 'Bear':6.64, \
-            'Woman':3.29, 'Couple':5.91, 'Woman_baby': 4.02, 'Mother_baby':3.94, 'Dog':6, 'Dirt':4.82, 'Boxer':5.24}])
-        image_brightness = pd.DataFrame([{'Basket':0, 'Lamp':0, 'Roller_coaster':255, 'Boy':0, 'Bear':0, 'Woman':19,\
-            'Couple':0, 'Woman_baby': 0, 'Mother_baby':213, 'Dog':0, 'Dirt':248, 'Boxer':9}])
-        comparison_result['IAPSrating'] = 0
-        comparison_result['Image_brightness'] = 0
-        for task in comparison_result.task_name.unique():
-            for participant in comparison_result.ParticipantName.unique():
-                #IAPSrating = 0
-                #brightness = 0
-                IAPSrating = iaps_arousal[task].iloc[0]
-                brightness = image_brightness[task].iloc[0]
-                comparison_result.loc[((comparison_result['task_name']==task) \
-                               & (comparison_result['ParticipantName']==participant)), 'IAPSrating']= IAPSrating
-                comparison_result.loc[((comparison_result['task_name']==task) \
-                               & (comparison_result['ParticipantName']==participant)), 'Image_brightness']= brightness
-        Analysis.comparison_result = comparison_result
+# loop through all participnts and extract features
+    def collate_results(self):
+        all_tasks = Analysis.all_tasks
+        collation_result = pd.DataFrame()
+        for participant in all_tasks.ParticipantName.unique():
+            # print(participant)
+            participant_result = self.collate_peaks(all_tasks[all_tasks['ParticipantName'] == participant])
+            collation_result = collation_result.append(participant_result)
+        Analysis.collation_result = collation_result
 
 
 # Normalize variables for each participant
@@ -381,10 +383,10 @@ class Analysis:
         comparison_result = Analysis.comparison_result
         min_max_scaler = preprocessing.MinMaxScaler(feature_range=(1,3))
         normalized_result = pd.DataFrame(columns=comparison_result.columns)
-        normalized_result['peakDuration_normalized']= 0
-        normalized_result['footDelta_normalized']= 0
-        normalized_result['valleyDelta_normalized']=0
-        normalized_result['duration_normalized']=0
+        normalized_result['peakDuration_normalized'] = 0
+        normalized_result['footDelta_normalized'] = 0
+        normalized_result['valleyDelta_normalized'] = 0
+        normalized_result['duration_normalized'] = 0
         for participant in comparison_result.ParticipantName.unique():
             participant_record = comparison_result.loc[comparison_result['ParticipantName']==participant]
             participant_record['peakDuration_normalized'] = \
@@ -403,15 +405,15 @@ class Analysis:
         normalized_result['cumulative'] = 0
         for participant in normalized_result.ParticipantName.unique():
             for task in normalized_result.task_name.unique():
-                peakDuration = normalized_result.loc[
+                '''peakDuration = normalized_result.loc[
                     (normalized_result['ParticipantName'] == participant) & (normalized_result['task_name'] == task)][
                     'peakDuration_normalized']
+                foot = normalized_result.loc[
+                    (normalized_result['ParticipantName'] == participant) & (normalized_result['task_name'] == task)][
+                    'footDelta_normalized']'''
                 duration = normalized_result.loc[
                     (normalized_result['ParticipantName'] == participant) & (normalized_result['task_name'] == task)][
                     'duration_normalized']
-                foot = normalized_result.loc[
-                    (normalized_result['ParticipantName'] == participant) & (normalized_result['task_name'] == task)][
-                    'footDelta_normalized']
                 valley = normalized_result.loc[
                     (normalized_result['ParticipantName'] == participant) & (normalized_result['task_name'] == task)][
                     'valleyDelta_normalized']
@@ -430,17 +432,14 @@ pictureStudy.fill_aoi()
 pictureStudy.interpolate()
 pictureStudy.groupTasks()
 pictureStudy.compare_results()
-pictureStudy.fill_dependent_variables()
+pictureStudy.collate_results()
 pictureStudy.normalize_result()
 pictureStudy.generate_inference()
 normalized_result = pictureStudy.normalized_result
-
+collation_result = pictureStudy.collation_result
 
 # Perform correlation test - participants reported arousal against the cumulative result of the algorithm
 print("n = ",len(normalized_result))
 print("participants = ", len(normalized_result.ParticipantName.unique()))
-print(scipy.stats.pearsonr(normalized_result['cumulative'],normalized_result['Image_brightness']))
-print(scipy.stats.pearsonr(normalized_result['IAPSrating'],normalized_result['cumulative']))
-print(scipy.stats.spearmanr(normalized_result['reported'],normalized_result['cumulative']))
-print(scipy.stats.pearsonr(normalized_result['IAPSrating'],normalized_result['reported']))
-print(normalized_result)
+for participant in normalized_result.ParticipantName.unique():
+    print(participant, len(normalized_result[normalized_result['ParticipantName']==participant]), normalized_result[normalized_result['ParticipantName']==participant].cumulative.mean())
